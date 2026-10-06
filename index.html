@@ -1,0 +1,1328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Static review workbench for JavaScript: secrets, injection sinks, endpoints, logic map and a review run-book. Runs entirely in the browser.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128269;</text></svg>">
+<style>
+  :root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  html,body{margin:0}
+  body{font:14px system-ui,-apple-system,"Segoe UI",sans-serif;background:#f2f4f6}
+  img{max-width:100%}
+  [hidden]{display:none!important}
+</style>
+<title>JS Review Bench</title>
+<style>
+/* Layout: fixed left rail (files + sections), single scrolling work column on the right.
+   Palette: cool slate neutrals (inspection-lab, not terminal-green), copper accent for
+   interactive marks, separate semantic ramp for severity so accent never means "danger". */
+:root{
+  color-scheme: light;
+  --paper:#f2f4f6;
+  --surface:#ffffff;
+  --surface-2:#e8ecf0;
+  --ink:#171c22;
+  --ink-2:#4a5560;
+  --ink-3:#7c8792;
+  --rule:#d2d9e0;
+  --accent:#9a4f1b;
+  --accent-soft:#f3e2d5;
+  --sev-crit:#a51f2d;
+  --sev-high:#b4571a;
+  --sev-med:#8a6b12;
+  --sev-low:#50616f;
+  --sev-info:#2a6071;
+  --ok:#1f6b4a;
+  --mark:#ffe9a8;
+  --font-ui:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --rail:276px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --paper:#101418;
+    --surface:#161c22;
+    --surface-2:#1e262e;
+    --ink:#e7edf2;
+    --ink-2:#a9b6c2;
+    --ink-3:#74828f;
+    --rule:#2a343d;
+    --accent:#e08a4d;
+    --accent-soft:#33241a;
+    --sev-crit:#f1707c;
+    --sev-high:#eda05c;
+    --sev-med:#d8bf63;
+    --sev-low:#9bacba;
+    --sev-info:#73c2d8;
+    --ok:#5fc295;
+    --mark:#4d4119;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --paper:#101418;
+  --surface:#161c22;
+  --surface-2:#1e262e;
+  --ink:#e7edf2;
+  --ink-2:#a9b6c2;
+  --ink-3:#74828f;
+  --rule:#2a343d;
+  --accent:#e08a4d;
+  --accent-soft:#33241a;
+  --sev-crit:#f1707c;
+  --sev-high:#eda05c;
+  --sev-med:#d8bf63;
+  --sev-low:#9bacba;
+  --sev-info:#73c2d8;
+  --ok:#5fc295;
+  --mark:#4d4119;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-ui);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;text-wrap:balance;font-weight:600;letter-spacing:-.01em}
+a{color:var(--accent)}
+code,kbd,pre{font-family:var(--font-mono)}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---- shell ---- */
+.shell{display:grid;grid-template-columns:var(--rail) minmax(0,1fr);min-height:100%}
+.rail{border-right:1px solid var(--rule);background:var(--surface);position:sticky;top:env(safe-area-inset-top,0px);height:100vh;display:flex;flex-direction:column;gap:14px;padding:18px 16px;overflow-y:auto}
+.brand{display:flex;flex-direction:column;gap:2px}
+.brand .mark{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.brand h1{font-size:19px}
+.brand p{margin:4px 0 0;font-size:12px;color:var(--ink-3)}
+
+.drop{border:1.5px dashed var(--rule);border-radius:8px;padding:14px;text-align:center;background:var(--surface-2);transition:border-color .15s,background .15s}
+.drop.hot{border-color:var(--accent);background:var(--accent-soft)}
+.drop p{margin:0 0 8px;font-size:12px;color:var(--ink-2)}
+.btn{border:1px solid var(--rule);background:var(--surface);border-radius:6px;padding:6px 11px;font-size:12.5px;line-height:1.3}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{color:#fff;filter:brightness(1.08)}
+.btn.tiny{padding:3px 8px;font-size:11.5px}
+
+.railsec{display:flex;flex-direction:column;gap:6px}
+.railsec > h2{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3)}
+.filelist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+.filelist li{display:flex;align-items:center;gap:6px}
+.filebtn{flex:1;min-width:0;text-align:left;border:1px solid transparent;background:none;border-radius:6px;padding:5px 8px;font-family:var(--font-mono);font-size:12px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.filebtn:hover{background:var(--surface-2)}
+.filebtn[aria-current="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
+.filebtn .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.filebtn .ct{font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.navlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+.navlist button{width:100%;text-align:left;border:0;background:none;border-radius:6px;padding:6px 9px;display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.navlist button:hover{background:var(--surface-2)}
+.navlist button[aria-current="true"]{background:var(--surface-2);box-shadow:inset 2px 0 0 var(--accent);font-weight:600}
+.navlist .n{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+
+/* ---- main ---- */
+.main{min-width:0;padding:22px 26px 80px;display:flex;flex-direction:column;gap:20px;max-width:1180px}
+.pagehead{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;border-bottom:1px solid var(--rule);padding-bottom:12px}
+.pagehead h2{font-size:21px}
+.pagehead p{margin:3px 0 0;font-size:13px;color:var(--ink-2);max-width:62ch}
+.toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tile{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:11px 13px}
+.tile .k{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.tile .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.25;margin-top:2px}
+.tile .s{font-size:11.5px;color:var(--ink-3)}
+.tile.crit .v{color:var(--sev-crit)} .tile.high .v{color:var(--sev-high)} .tile.med .v{color:var(--sev-med)}
+
+.panel{background:var(--surface);border:1px solid var(--rule);border-radius:9px}
+.panel > header{padding:12px 15px;border-bottom:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;justify-content:space-between}
+.panel > header h3{font-size:14.5px}
+.panel > header .sub{font-size:12px;color:var(--ink-3)}
+.panel .body{padding:14px 15px}
+.panel .body.flush{padding:0}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--rule);background:var(--surface-2);border-radius:999px;padding:3px 10px;font-size:12px;display:inline-flex;gap:6px;align-items:center}
+.chip b{font-weight:600}
+.chip.on{border-color:var(--accent);background:var(--accent-soft)}
+.chip .n{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+
+.sev{display:inline-block;font-family:var(--font-mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;padding:2px 7px;border-radius:4px;color:#fff;white-space:nowrap}
+.sev.critical{background:var(--sev-crit)} .sev.high{background:var(--sev-high)} .sev.medium{background:var(--sev-med)} .sev.low{background:var(--sev-low)} .sev.info{background:var(--sev-info)}
+
+/* findings */
+.find{border-bottom:1px solid var(--rule)}
+.find:last-child{border-bottom:0}
+.find > .row{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:12px;align-items:start;padding:11px 15px;width:100%;background:none;border:0;text-align:left}
+.find > .row:hover{background:var(--surface-2)}
+.find.done{opacity:.5}
+.find .ttl{font-weight:600;font-size:13.5px}
+.find .meta{font-size:11.5px;color:var(--ink-3);font-family:var(--font-mono);margin-top:2px;display:flex;flex-wrap:wrap;gap:10px}
+.find .snip{margin-top:6px;font-family:var(--font-mono);font-size:12px;background:var(--surface-2);border-left:2px solid var(--rule);border-radius:0 4px 4px 0;padding:5px 9px;overflow-x:auto;white-space:pre}
+.find .snip mark{background:var(--mark);color:inherit;border-radius:2px}
+.find .state{display:flex;gap:4px}
+.detail{padding:0 15px 14px 99px;display:grid;gap:10px}
+.detail h4{margin:0;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.detail p{margin:2px 0 0;font-size:13px;color:var(--ink-2);max-width:72ch}
+.detail ol,.detail ul{margin:3px 0 0;padding-left:18px;font-size:13px;color:var(--ink-2)}
+.detail li{margin-bottom:3px}
+.detail .lnk{font-size:12.5px}
+
+/* tables */
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{text-align:left;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:500;padding:9px 14px;border-bottom:1px solid var(--rule);white-space:nowrap;position:sticky;top:0;background:var(--surface)}
+td{padding:8px 14px;border-bottom:1px solid var(--rule);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.mono,th.mono{font-family:var(--font-mono);font-size:12px}
+td.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.ln{font-family:var(--font-mono);font-size:11.5px;color:var(--accent);background:none;border:0;padding:0;text-decoration:underline;text-underline-offset:2px}
+
+/* code view */
+.codewrap{max-height:70vh;overflow:auto;background:var(--surface);border-radius:0 0 8px 8px}
+pre.code{margin:0;font-size:12.5px;line-height:1.65}
+pre.code .l{display:flex;gap:0}
+pre.code .l:target,pre.code .l.hit{background:var(--accent-soft)}
+pre.code .l.flash{animation:flash 1.2s ease-out}
+@keyframes flash{from{background:var(--mark)}to{background:transparent}}
+pre.code .g{flex:0 0 58px;text-align:right;padding:0 10px 0 6px;color:var(--ink-3);user-select:none;border-right:1px solid var(--rule);position:sticky;left:0;background:var(--surface)}
+pre.code .t{padding:0 14px;white-space:pre;flex:1}
+pre.code mark{background:var(--mark);color:inherit}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* checklist */
+.steps{list-style:none;margin:0;padding:0;counter-reset:s}
+.steps > li{border-bottom:1px solid var(--rule);padding:12px 15px 12px 52px;position:relative;counter-increment:s}
+.steps > li:last-child{border-bottom:0}
+.steps > li::before{content:counter(s,decimal-leading-zero);position:absolute;left:15px;top:12px;font-family:var(--font-mono);font-size:11px;color:var(--ink-3)}
+.steps .hd{display:flex;gap:10px;align-items:flex-start;justify-content:space-between}
+.steps h4{margin:0;font-size:13.5px;font-weight:600}
+.steps p{margin:3px 0 0;font-size:13px;color:var(--ink-2);max-width:74ch}
+.steps .ask{margin:7px 0 0;padding-left:16px;font-size:12.5px;color:var(--ink-2)}
+.steps label{display:flex;gap:7px;align-items:center;font-size:12px;color:var(--ink-3);white-space:nowrap}
+.steps li.done h4{text-decoration:line-through;color:var(--ink-3)}
+input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px}
+textarea,input[type=search],input[type=text]{font:inherit;background:var(--surface-2);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:6px 9px;width:100%}
+textarea{font-family:var(--font-mono);font-size:12.5px;min-height:70px;resize:vertical}
+
+.empty{text-align:center;padding:40px 20px;color:var(--ink-3);font-size:13px}
+.hint{font-size:12.5px;color:var(--ink-3);max-width:74ch}
+.kbd{font-family:var(--font-mono);font-size:11px;border:1px solid var(--rule);border-radius:4px;padding:1px 5px;background:var(--surface-2)}
+.bar{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11.5px;color:var(--ink-3);margin-top:7px}
+.legend span{display:inline-flex;gap:5px;align-items:center}
+.legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+@media (max-width:860px){
+  .shell{grid-template-columns:1fr}
+  .rail{position:static;height:auto;border-right:0;border-bottom:1px solid var(--rule)}
+  .main{padding:18px 16px 60px}
+  .detail{padding-left:15px}
+  .find > .row{grid-template-columns:62px minmax(0,1fr);}
+  .find > .row .state{grid-column:1/-1}
+}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+</head>
+<body>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand">
+      <span class="mark">static review</span>
+      <h1>JS Review Bench</h1>
+      <p>Triage a JavaScript file: secrets, sinks, routes, logic map, and a review run-book.</p>
+    </div>
+
+    <div class="drop" id="drop">
+      <p>Drop <code>.js</code> / <code>.ts</code> / <code>.jsx</code> files here</p>
+      <button class="btn primary" id="pick">Choose files</button>
+      <input type="file" id="file" multiple accept=".js,.mjs,.cjs,.jsx,.ts,.tsx,.json,.map,.html,.txt" hidden>
+      <p style="margin:8px 0 0"><button class="btn tiny" id="paste">Paste code</button>
+      <button class="btn tiny" id="demo">Load sample</button></p>
+    </div>
+
+    <div class="railsec">
+      <h2>Files</h2>
+      <ul class="filelist" id="files"><li><span class="hint" style="padding:4px 8px">None loaded</span></li></ul>
+    </div>
+
+    <div class="railsec">
+      <h2>Sections</h2>
+      <ul class="navlist" id="nav"></ul>
+    </div>
+
+    <div class="railsec" style="margin-top:auto">
+      <h2>Session</h2>
+      <div class="chips">
+        <button class="btn tiny" id="theme">Toggle theme</button>
+        <button class="btn tiny" id="export">Export notes</button>
+      </div>
+      <p class="hint" style="font-size:11.5px">Everything runs in this page. Nothing is uploaded. Triage marks and notes are kept in this browser only.</p>
+    </div>
+  </aside>
+
+  <main class="main" id="main"></main>
+</div>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ *
+ * 1. RULES — each rule teaches as well as detects.
+ *    why  : what an attacker gets out of it
+ *    verify: how to confirm it dynamically, not just grep-and-report
+ * ------------------------------------------------------------------ */
+
+const RULES = [
+  /* ---------- credentials ---------- */
+  {id:"aws-akid", cat:"secret", sev:"critical", title:"AWS access key ID",
+   re:/\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16})\b/g,
+   why:"An AKIA key shipped to the browser is usable by anyone who opens devtools. Paired with a secret it is full API access under that IAM identity.",
+   verify:["Look within ~5 lines for a 40-char secret, or a `secretAccessKey` field.","`aws sts get-caller-identity` with the pair tells you whose identity it is and whether it is live.","ASIA = temporary STS key; check if it is still inside its expiry window.","Report even without the secret half: it names the account and is an inventory leak."]},
+
+  {id:"aws-secret", cat:"secret", sev:"critical", title:"Possible AWS secret access key",
+   re:/(?:secret[_-]?access[_-]?key|aws[_-]?secret)["'`\s:=]{1,6}([A-Za-z0-9/+=]{40})/gi,
+   why:"The other half of an AWS credential pair. On its own it is unusable; next to an AKIA it is account access.",
+   verify:["Pair it with the nearest access key ID.","Never test against production — confirm scope with the client first, then do a read-only identity call."]},
+
+  {id:"gcp-key", cat:"secret", sev:"high", title:"Google API key",
+   re:/\bAIza[0-9A-Za-z\-_]{35}\b/g,
+   why:"Google keys are often shipped intentionally (Maps), so the finding is about restrictions, not presence. An unrestricted key can be billed against or used for other enabled APIs.",
+   verify:["Check whether the key is HTTP-referrer restricted by calling it with no Referer header.","Enumerate which APIs it answers for — Maps-only is low risk; a key that answers for other services is not.","Frame the report as 'unrestricted key', with the billing impact."]},
+
+  {id:"gcp-sa", cat:"secret", sev:"critical", title:"Google service-account JSON",
+   re:/"type"\s*:\s*"service_account"/g,
+   why:"A service-account blob embedded in client code is a full non-human identity with whatever project roles it was granted.",
+   verify:["Pull `client_email` and `project_id` to identify the principal.","Treat as an immediate-escalation finding; stop and notify rather than exercising it broadly."]},
+
+  {id:"priv-key", cat:"secret", sev:"critical", title:"Private key block",
+   re:/-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g,
+   why:"A private key in a shipped bundle breaks whatever it authenticates: TLS, JWT signing, SSH, code signing.",
+   verify:["Identify what it signs — look for the matching `kid`, cert, or public key nearby.","If it is a JWT signing key, forging a token for an admin subject proves impact without touching data."]},
+
+  {id:"stripe-live", cat:"secret", sev:"critical", title:"Stripe live secret key",
+   re:/\b(?:sk|rk)_live_[0-9a-zA-Z]{20,}\b/g,
+   why:"Direct access to the payments account: read customers, create refunds, move money.",
+   verify:["Do not exercise it. Report immediately — this is usually a stop-the-test finding.","A `pk_live_` publishable key beside it is expected and harmless; the `sk_`/`rk_` prefix is the problem."]},
+
+  {id:"stripe-test", cat:"secret", sev:"low", title:"Stripe test key",
+   re:/\b(?:sk|rk)_test_[0-9a-zA-Z]{20,}\b/g,
+   why:"Test keys touch no real money, but their presence usually means the same build process would ship a live key.",
+   verify:["Report as hygiene/process, not as impact.","Check other environments' bundles for the live equivalent at the same code location."]},
+
+  {id:"github-pat", cat:"secret", sev:"critical", title:"GitHub token",
+   re:/\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}\b/g,
+   why:"Repository access — often private source, CI secrets, and the ability to push code that later runs in a pipeline.",
+   verify:["`GET /user` and read the `x-oauth-scopes` response header to see the grant without touching repos.","`repo` or `workflow` scope escalates this to supply-chain impact."]},
+
+  {id:"slack", cat:"secret", sev:"high", title:"Slack token or webhook",
+   re:/\b(?:xox[abposr]-[A-Za-z0-9-]{10,}|https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9\/+]{20,})\b/g,
+   why:"Read or post into internal channels — strong phishing primitive and often a window onto internal chatter.",
+   verify:["`auth.test` identifies the workspace and bot without posting anything.","A webhook URL only posts to one channel; say which channel in the report."]},
+
+  {id:"jwt", cat:"secret", sev:"medium", title:"Hardcoded JWT",
+   re:/\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g,
+   why:"A baked-in token is either a live session, a service identity, or a sample that reveals the claim structure you need to forge one.",
+   verify:["Base64-decode the two segments — read `exp`, `iss`, `role`, `scope`. Do not trust the token's own claims about who you are.","Check `alg`: `none` or HS256-where-RS256-was-expected is an algorithm-confusion lead.","Expired tokens still document the claim shape — keep them for the auth-bypass test."]},
+
+  {id:"basic-auth-url", cat:"secret", sev:"high", title:"Credentials inside a URL",
+   re:/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>:@\/]{2,}:[^\s"'`<>@\/]{2,}@[a-z0-9.-]+/gi,
+   why:"user:pass@host embeds a credential that also leaks through logs, proxies, and Referer headers.",
+   verify:["Identify the service from the scheme and host (mongodb://, postgres://, redis:// are the high-value ones).","Check whether the host resolves publicly before anything else."]},
+
+  {id:"db-uri", cat:"secret", sev:"high", title:"Database or broker connection string",
+   re:/\b(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|amqp|ldaps?):\/\/[^\s"'`<>]{6,}/gi,
+   why:"Direct data-tier access, bypassing every control the application layer implements.",
+   verify:["Resolve the host — an internal name is still useful as network intel for the report.","Only attempt a connection if the engagement scope covers the data tier."]},
+
+  {id:"generic-assign", cat:"secret", sev:"high", title:"Secret-looking assignment",
+   re:/\b([\w$]{0,40}(?:apikey|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|secret|token|password|passwd|pwd|credentials?|bearer|salt|key))\s*[:=]\s*["'`]([^"'`\n]{8,160})["'`]/gi,
+   why:"The catch-all. Most real credential leaks look like a named variable holding a long opaque string.",
+   verify:["Discard obvious placeholders (changeme, xxx, your-key-here, process.env references).","Score the value's entropy — see the Entropy section — before calling it live.","Grep the whole bundle for the same literal: reuse across files usually means it is real."]},
+
+  {id:"high-entropy", cat:"secret", sev:"medium", title:"High-entropy string literal",
+   custom:"entropy",
+   why:"Random-looking literals that no rule names are where unusual or custom credentials hide.",
+   verify:["Rule out hashes, build IDs, sourcemap hashes, minified identifiers, and base64 images.","Search the string against the app's network traffic — if it rides on a request header, it is a credential."]},
+
+  /* ---------- injection sinks ---------- */
+  {id:"eval", cat:"sink", sev:"high", title:"Dynamic code execution",
+   re:/(?<![.\w$])(?:eval|Function)\s*\(|new\s+Function\s*\(|setTimeout\s*\(\s*["'`]|setInterval\s*\(\s*["'`]/g,
+   why:"If any attacker-influenced value reaches here, it is script execution in the app's origin — full XSS with no HTML parsing involved.",
+   verify:["Trace the argument back to its source. A literal is noise; a variable is the whole finding.","Check the Flows section — the bench pairs sinks with nearby sources for you.","`setTimeout('string')` is an eval in disguise."]},
+
+  {id:"innerhtml", cat:"sink", sev:"high", title:"HTML written from a string",
+   re:/\.(?:innerHTML|outerHTML)\s*=|\.insertAdjacentHTML\s*\(|document\s*\.\s*write(?:ln)?\s*\(|\$\([^)]*\)\s*\.\s*(?:html|append|prepend|after|before)\s*\(/g,
+   why:"The classic DOM-XSS sink. Whether it fires depends entirely on what reaches the right-hand side.",
+   verify:["Is the value sanitized first? Look for DOMPurify, an escape helper, or a template literal that interpolates raw input.","`img/onerror` is the usual proof payload when the sink strips `<script>`.","jQuery `.html()` and `.append()` behave the same way — and `$(userInput)` alone can execute."]},
+
+  {id:"react-dsh", cat:"sink", sev:"high", title:"dangerouslySetInnerHTML",
+   re:/dangerouslySetInnerHTML/g,
+   why:"React escapes everything by default, so this is a deliberate opt-out. Every occurrence deserves a look at where the HTML comes from.",
+   verify:["Follow the `__html` value to its origin — props, API response, CMS field, markdown renderer.","CMS- and markdown-sourced HTML is the common live case: stored XSS through content editors."]},
+
+  {id:"vue-ng", cat:"sink", sev:"high", title:"Framework raw-HTML or template sink",
+   re:/\bv-html\b|\[innerHTML\]\s*=|\$sce\s*\.\s*trustAsHtml|bypassSecurityTrust(?:Html|Script|Url|ResourceUrl)/g,
+   why:"Vue `v-html` and Angular's bypassSecurityTrust* disable the framework's own escaping.",
+   verify:["Angular's bypassSecurityTrustResourceUrl on an iframe src is also an open-redirect / script-load primitive.","Find who supplies the bound value — a route param or query string makes it reflected XSS."]},
+
+  {id:"srcdoc-href", cat:"sink", sev:"medium", title:"URL or iframe assigned from a variable",
+   re:/\.(?:src|href|action|srcdoc|formAction)\s*=\s*(?!["'`])[A-Za-z_$][\w$.\[\]]*/g,
+   why:"A non-literal URL assignment can mean javascript: XSS, an open redirect, or loading a script from a host an attacker controls.",
+   verify:["Test `javascript:alert(1)` where the value is attacker-controlled and the sink is href/src.","If it feeds `<script src>`, it is remote code execution in the origin.","If it is a redirect target, check whether `//evil.tld` and `https:/\\/evil.tld` survive the validation."]},
+
+  {id:"proto-pollution", cat:"sink", sev:"medium", title:"Prototype-pollution shaped code",
+   re:/\[\s*(?:key|k|prop|name|i|attr)\s*\]\s*=|__proto__|\bObject\s*\.\s*assign\s*\(\s*\{\s*\}\s*,|constructor\s*\[\s*["'`]prototype/g,
+   why:"A recursive merge or a bracket assignment from a parsed object lets an attacker set Object.prototype properties that the rest of the app then reads.",
+   verify:["Look for a merge/extend/deepClone helper that recurses without a `__proto__` guard.","Test with `?__proto__[test]=1` or a JSON body `{\"__proto__\":{\"test\":1}}`, then read `({}).test` in the console.","Impact comes from the gadget: a polluted property later used in a sink from this list."]},
+
+  {id:"postmessage", cat:"sink", sev:"medium", title:"postMessage listener or broadcast",
+   re:/addEventListener\s*\(\s*["'`]message["'`]|\.postMessage\s*\(/g,
+   why:"A listener without an origin check accepts messages from any frame; a `postMessage(data,'*')` leaks data to any embedder.",
+   verify:["Does the handler compare `event.origin` against an allowlist? A `.includes('trusted.com')` check is bypassable with `trusted.com.evil.tld`.","Check what the handler does with `event.data` — if it reaches a sink, you have cross-origin XSS.","Wildcard `'*'` targetOrigin on a send means any framing page reads the payload."]},
+
+  {id:"storage", cat:"sink", sev:"low", title:"Browser storage use",
+   re:/\b(?:localStorage|sessionStorage|indexedDB)\s*(?:\.|\[)/g,
+   why:"Tokens in localStorage are readable by any script in the origin, so one XSS becomes persistent account takeover.",
+   verify:["List the keys the app writes at runtime and note which hold session material.","Compare with the cookie flags: if a session cookie is HttpOnly but a copy sits in localStorage, the protection is void."]},
+
+  {id:"cookie-write", cat:"sink", sev:"low", title:"document.cookie access",
+   re:/document\s*\.\s*cookie/g,
+   why:"Script reading or writing cookies means those cookies cannot be HttpOnly.",
+   verify:["Check Set-Cookie flags for the same names: Secure, HttpOnly, SameSite.","A client-set auth cookie is almost always missing all three."]},
+
+  {id:"websocket", cat:"sink", sev:"low", title:"WebSocket connection",
+   re:/new\s+WebSocket\s*\(|io\s*\(\s*["'`]|socket\.io/g,
+   why:"WS endpoints often skip the authorization and rate limiting of the REST surface, and usually lack CSRF protection (no SOP on the handshake).",
+   verify:["Note the URL and subprotocol for the dynamic phase.","Test whether the handshake authenticates per-connection or trusts the cookie, and whether Origin is validated."]},
+
+  /* ---------- auth & logic ---------- */
+  {id:"client-authz", cat:"logic", sev:"high", title:"Client-side authorization decision",
+   re:/\b(?:is|has|can|check|require|allow)[A-Z_]?(?:Admin|Owner|Staff|Super|Root|Premium|Paid|Pro|Auth[a-z]*|Permission|Role|Entitled|Beta)\w*\b|\brole\s*===?\s*["'`]|permissions?\s*\.\s*includes\s*\(/g,
+   why:"A check that lives in the bundle is a UI hint, not a control. The question is always whether the server repeats it.",
+   verify:["Flip the value in devtools and see whether the hidden feature appears — that alone proves nothing.","Then call the endpoint it unlocks directly, as a low-privileged user. If the server answers, you have broken access control.","Check for privileged endpoints referenced only inside admin branches — those are your test targets."]},
+
+  {id:"feature-flag", cat:"logic", sev:"info", title:"Feature flag or kill switch",
+   re:/\b(?:feature|flag|enable|disable|toggle|experiment|variant|rollout)[A-Z_]\w*\s*[:=]|\bflags?\s*\[\s*["'`][\w.-]+["'`]\s*\]/g,
+   why:"Flags name unreleased functionality. Code paths behind a disabled flag are often less tested and less reviewed.",
+   verify:["Collect the flag names — they are a map of the roadmap and of hidden routes.","Force a flag on locally, then exercise the backend it talks to; the server side is frequently unfinished."]},
+
+  {id:"debug", cat:"logic", sev:"medium", title:"Debug or development switch",
+   re:/\b(?:debug|verbose|devMode|isDev|testMode|__DEV__|bypass|skipAuth|mock(?:Auth|User|Login))\b\s*[:=]\s*(?:true|1|["'`])/gi,
+   why:"Debug paths disable protections and expose internals, and sometimes ship to production by accident.",
+   verify:["Look for how the flag is read — a query parameter or localStorage key means you can enable it yourself.","`skipAuth` / `mockUser` style names are an authentication-bypass lead, not just hygiene."]},
+
+  {id:"crypto-weak", cat:"logic", sev:"medium", title:"Weak or client-side cryptography",
+   re:/\b(?:MD5|SHA-?1|md5|btoa|atob|CryptoJS\s*\.\s*(?:AES|DES|TripleDES|RC4)|Math\s*\.\s*random)\s*\(/g,
+   why:"Base64 is not encryption, Math.random is not a CSPRNG, and client-side AES with a bundled key protects nothing.",
+   verify:["If Math.random generates a token, reset ID, or nonce, test predictability.","Find where the CryptoJS key comes from — in the bundle it is a decode, not a break.","Client-side hashing of a password usually means the hash *is* the password to the server."]},
+
+  {id:"cors-any", cat:"logic", sev:"medium", title:"Permissive request or CORS setting",
+   re:/credentials\s*:\s*["'`]include["'`]|withCredentials\s*:\s*true|mode\s*:\s*["'`]no-cors["'`]|Access-Control-Allow-Origin/g,
+   why:"Cookie-bearing cross-origin requests are the precondition for CSRF and for CORS misconfiguration being exploitable.",
+   verify:["Replay a state-changing request with the Origin header set to a host you control and watch the ACAO response.","A reflected Origin with ACAC: true is a full cross-origin read."]},
+
+  {id:"todo", cat:"logic", sev:"info", title:"Developer note in shipped code",
+   re:/\/\/\s*(?:TODO|FIXME|HACK|XXX|BUG|INSECURE|TEMP|REMOVE|SECURITY)\b[^\n]{0,140}/gi,
+   why:"Developers write down exactly where the shortcuts are. Read them.",
+   verify:["Treat each note as a lead, not a finding.","Notes near auth, upload, or payment code are worth testing first."]},
+
+  /* ---------- surface ---------- */
+  {id:"http-url", cat:"surface", sev:"medium", title:"Cleartext http:// URL",
+   re:/\bhttp:\/\/(?!localhost|127\.0\.0\.1|0\.0\.0\.0|schemas?\.|www\.w3\.org|ns\.adobe|xmlns)[a-z0-9.-]+[^\s"'`<>]*/gi,
+   why:"Plaintext transport, and on an HTTPS page it is also mixed content that the browser may block or that an on-path attacker can rewrite.",
+   verify:["Check whether the host redirects to HTTPS and whether HSTS is set.","A cleartext API call carrying a token is the high-impact version."]},
+
+  {id:"internal-host", cat:"surface", sev:"medium", title:"Internal or non-production host",
+   re:/\b(?:https?:\/\/)?(?:[a-z0-9-]+\.)*(?:localhost|internal|intranet|corp|local|lan|test|dev|staging|stage|qa|uat|sandbox|preprod)(?:\.[a-z]{2,})?(?::\d{2,5})?\b(?![\w.-])/gi,
+   why:"Leaked internal names expand the target list and sometimes resolve from the outside, or become SSRF targets.",
+   verify:["Resolve each name externally and internally; note which answer.","Feed them to any SSRF-capable parameter you find later.","Non-prod environments usually have weaker auth and real data."]},
+
+  {id:"cloud-bucket", cat:"surface", sev:"medium", title:"Cloud storage bucket",
+   re:/\b[a-z0-9.-]+\.s3[.-](?:[a-z0-9-]+\.)?amazonaws\.com|s3:\/\/[a-z0-9.-]+|\b[a-z0-9-]+\.blob\.core\.windows\.net|storage\.googleapis\.com\/[a-z0-9._-]+|\b[a-z0-9-]+\.r2\.cloudflarestorage\.com/gi,
+   why:"Bucket names are often guessable and permissions often wrong — public listing or public write.",
+   verify:["Try an unauthenticated LIST before anything else; it is read-only and decisive.","Check whether the app requests a presigned upload URL and whether the server validates content type and path."]},
+
+  {id:"graphql", cat:"surface", sev:"info", title:"GraphQL endpoint or operation",
+   re:/\/graphql\b|gql\s*`|useQuery\s*\(|useMutation\s*\(|__typename/g,
+   why:"One endpoint, many operations. The bundle usually contains the full operation set, which is better than guessing.",
+   verify:["Extract every query and mutation string from the bundle — that is your operation inventory.","Test introspection; if it is disabled, the bundle's operations are your schema.","Per-field authorization is the usual gap: request a sensitive field from a low-privileged account."]},
+
+  {id:"upload", cat:"surface", sev:"medium", title:"File upload handling",
+   re:/new\s+FormData\s*\(|\.files\s*\[|type\s*=\s*["'`]file["'`]|accept\s*=\s*["'`][^"'`]*["'`]|multipart\/form-data/g,
+   why:"Upload paths are where client-side validation most often stands in for server-side validation.",
+   verify:["Read the client-side extension/size/MIME checks here — then send a request that violates every one of them directly.","Check where the file is served from afterwards: same origin plus an executable content type is the worst case."]},
+
+  {id:"route", cat:"surface", sev:"info", title:"Client-side route definition",
+   re:/\bpath\s*:\s*["'`]\/[^"'`]*["'`]|<Route\b[^>]*path=|router\s*\.\s*(?:get|post|push|addRoute)\s*\(\s*["'`]/g,
+   why:"The route table is the app's sitemap, including views the navigation never links to.",
+   verify:["Visit each route directly as an unauthenticated user and as a low-privileged one.","Admin routes present in the bundle but hidden in the UI are the first thing to try."]},
+];
+
+const CAT_LABEL = {secret:"Credentials", sink:"Injection sinks", logic:"Logic & auth", surface:"Attack surface"};
+const SEV_ORDER = {critical:0, high:1, medium:2, low:3, info:4};
+
+/* taint-ish: things an attacker can influence in the browser */
+const SOURCE_RE = /\b(?:location\s*\.\s*(?:hash|search|href|pathname)|document\s*\.\s*(?:URL|documentURI|referrer|baseURI)|window\s*\.\s*name|URLSearchParams|new\s+URL\s*\(|event\s*\.\s*data|e\s*\.\s*data|message\s*\.\s*data|\.params\b|\.query\b|useParams\s*\(|useSearchParams\s*\(|getQueryParam|req\s*\.\s*(?:body|query|params|headers)|localStorage\s*\.\s*getItem|sessionStorage\s*\.\s*getItem|document\s*\.\s*cookie|\.(?:json|text)\s*\(\s*\))/g;
+const SINK_IDS = new Set(["eval","innerhtml","react-dsh","vue-ng","srcdoc-href","proto-pollution"]);
+
+const PLACEHOLDER = /^(?:x{3,}|y{3,}|0{3,}|1{3,}|a{3,}|\*{3,}|\.{3,}|<[^>]+>|\{\{?[\w.\s-]+\}?\}|\$\{[^}]*\}|%[sdv]|null|undefined|true|false|none|empty|changeme|change_me|your[-_ ]?(?:api[-_ ]?)?key(?:[-_ ]?here)?|insert[-_ ]?key|replace[-_ ]?me|todo|test|dummy|sample|example|placeholder|secret|password|redacted|hidden|lorem\b.*)$/i;
+
+/* ------------------------------------------------------------------ *
+ * 2. ANALYSIS
+ * ------------------------------------------------------------------ */
+
+function shannon(s){
+  const f = Object.create(null);
+  for (const c of s) f[c] = (f[c]||0)+1;
+  let h = 0;
+  for (const k in f){ const p = f[k]/s.length; h -= p*Math.log2(p); }
+  return h;
+}
+
+function lineIndex(src){
+  const starts = [0];
+  for (let i=0;i<src.length;i++) if (src[i] === "\n") starts.push(i+1);
+  return starts;
+}
+function lineOf(starts, pos){
+  let lo = 0, hi = starts.length-1;
+  while (lo < hi){ const mid = (lo+hi+1)>>1; if (starts[mid] <= pos) lo = mid; else hi = mid-1; }
+  return lo+1;
+}
+
+function entropyFindings(src, starts){
+  const out = [];
+  const lit = /["'`]([A-Za-z0-9+/=_\-.]{24,120})["'`]/g;
+  const seen = new Set();
+  let m;
+  while ((m = lit.exec(src))){
+    const v = m[1];
+    if (seen.has(v)) continue;
+    if (PLACEHOLDER.test(v)) continue;
+    if (/^(?:https?:|data:|\/|\.\/|[\w-]+\/[\w-]+)/.test(v)) continue;
+    if (/^[0-9.]+$/.test(v)) continue;
+    if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(v)) continue;   // hostname, covered by other rules
+    if (!/[0-9]/.test(v) || !/[A-Za-z]/.test(v)) continue;
+    const h = shannon(v);
+    if (h < 3.7) continue;
+    seen.add(v);
+    out.push({pos:m.index, len:m[0].length, line:lineOf(starts, m.index), match:m[0], entropy:+h.toFixed(2)});
+    if (out.length > 120) break;
+  }
+  return out;
+}
+
+function detectStack(src, name){
+  const t = [];
+  const add = (label, test) => { if (test) t.push(label); };
+  add("React", /React\.createElement|_jsxs?\(|useState\s*\(|__REACT_DEVTOOLS/.test(src));
+  add("Vue", /createElementVNode|__vue__|Vue\.createApp|v-if=|defineComponent\s*\(/.test(src));
+  add("Angular", /@angular\/|ɵ|NgModule|platformBrowserDynamic/.test(src));
+  add("Svelte", /svelte\/internal|\$\$invalidate/.test(src));
+  add("jQuery", /jQuery|\$\.ajax\s*\(|\$\(document\)\.ready/.test(src));
+  add("Next.js", /__NEXT_DATA__|next\/dist|_next\/static/.test(src));
+  add("Node / server-side", /require\s*\(\s*["'`](?:fs|path|child_process|http|express)["'`]|module\.exports|process\.env\./.test(src));
+  add("Express", /express\s*\(\s*\)|app\.(?:get|post|use)\s*\(\s*["'`]\//.test(src));
+  add("Webpack bundle", /webpackJsonp|__webpack_require__|webpackChunk/.test(src));
+  add("Vite build", /__vite__|vite\/modulepreload|\/@vite\//.test(src));
+  add("TypeScript origin", /__awaiter|__decorate|tslib|:\s*(?:string|number|boolean)\s*[;,)=]/.test(src));
+  add("JSX source", /<[A-Z][\w.]*[\s/>]/.test(src) && /\breturn\s*\(/.test(src));
+  add("Axios", /axios\.(?:get|post|create|request)/.test(src));
+  add("GraphQL", /graphql|__typename|gql`/.test(src));
+  add("Firebase", /firebase|firestore|FirebaseApp/i.test(src));
+  add("Sentry", /sentry|Raven\.config/i.test(src));
+  add("Source map reference", /\/\/#\s*sourceMappingURL=/.test(src));
+  add("ES modules", /^\s*import\s+[\s\S]{0,80}from\s+["'`]/m.test(src) || /\bexport\s+(?:default|const|function|class)\b/.test(src));
+  add("CommonJS", /\brequire\s*\(\s*["'`]/.test(src));
+  add("async/await", /\basync\s+(?:function|\(|[\w$]+\s*=>)/.test(src));
+  add("Optional chaining", /\?\./.test(src));
+  if (/\.tsx?$/.test(name)) add("TypeScript file", true);
+  return [...new Set(t)];
+}
+
+function minifiedScore(src){
+  const lines = src.split("\n");
+  const longest = lines.reduce((a,l)=>Math.max(a,l.length),0);
+  const avg = src.length / Math.max(lines.length,1);
+  return {longest, avg:Math.round(avg), minified: avg > 180 || longest > 1500};
+}
+
+function extractEndpoints(src, starts){
+  const out = new Map();
+  const push = (url, line, how) => {
+    if (!url || url.length > 300) return;
+    const k = url;
+    if (!out.has(k)) out.set(k, {url, lines:new Set(), how:new Set()});
+    out.get(k).lines.add(line); out.get(k).how.add(how);
+  };
+  const abs = /["'`](https?:\/\/[^"'`\s]{4,240})["'`]/g;
+  const rel = /["'`](\/(?!\/)[A-Za-z0-9_\-./{}:$]{2,180})["'`]/g;
+  const call = /\b(?:fetch|axios(?:\.(?:get|post|put|patch|delete|request))?|\$\.(?:ajax|get|post)|open)\s*\(\s*["'`]([^"'`]{2,240})["'`]/g;
+  const tmpl = /\b(?:fetch|axios(?:\.\w+)?)\s*\(\s*`([^`]{2,240})`/g;
+  let m;
+  while ((m = abs.exec(src))) push(m[1], lineOf(starts,m.index), "literal");
+  while ((m = rel.exec(src))) if (!/\.(?:png|jpe?g|svg|gif|webp|css|woff2?|ttf|ico|mp4)$/i.test(m[1])) push(m[1], lineOf(starts,m.index), "literal");
+  while ((m = call.exec(src))) push(m[1], lineOf(starts,m.index), "request call");
+  while ((m = tmpl.exec(src))) push(m[1].replace(/\$\{[^}]*\}/g,"{var}"), lineOf(starts,m.index), "template");
+  return [...out.values()].map(e => ({
+    url: e.url,
+    lines: [...e.lines].sort((a,b)=>a-b),
+    how: [...e.how].join(", "),
+    kind: /^https?:/.test(e.url) ? (sameInterest(e.url) ? "external" : "external") : "path",
+    api: /\/(?:api|v\d|graphql|rest|rpc|gateway|service)s?\b/i.test(e.url),
+    interesting: /(?:admin|internal|debug|token|auth|login|session|password|user|account|upload|export|config|key|secret|billing|invoice|payment|impersonat|sudo|su\b|delete|backup)/i.test(e.url)
+  })).sort((a,b)=> (b.interesting-a.interesting) || (b.api-a.api) || a.url.localeCompare(b.url));
+}
+function sameInterest(){ return false; }
+
+function extractFunctions(src, starts){
+  const out = [];
+  const seen = new Set();
+  const pats = [
+    [/\bfunction\s+([A-Za-z_$][\w$]*)\s*\(([^)]{0,160})\)/g, "function"],
+    [/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(([^)]{0,160})\)\s*=>/g, "arrow"],
+    [/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\s*\(([^)]{0,160})\)/g, "function expr"],
+    [/\bclass\s+([A-Za-z_$][\w$]*)/g, "class"],
+    [/^\s{2,}(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(([^)]{0,120})\)\s*\{/gm, "method"],
+    [/\bexport\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g, "export"],
+  ];
+  for (const [re, kind] of pats){
+    let m;
+    while ((m = re.exec(src))){
+      const name = m[1];
+      if (!name || name.length < 2) continue;
+      if (/^(?:if|for|while|switch|catch|return|typeof|function|class|do|try|else)$/.test(name)) continue;
+      const key = name+"@"+kind;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({name, kind, args:(m[2]||"").trim().slice(0,90), line: lineOf(starts, m.index), score: nameScore(name)});
+      if (out.length > 1200) break;
+    }
+  }
+  return out.sort((a,b)=> b.score - a.score || a.line - b.line);
+}
+
+const HOT_NAME = [
+  [/auth|login|signin|logout|session|token|jwt|credential|password|passwd|otp|mfa|2fa|sso|saml|oauth/i, 5, "authentication"],
+  [/admin|role|permission|privilege|acl|grant|owner|isallowed|cansee|authorize|entitle|impersonat/i, 5, "authorization"],
+  [/pay|billing|invoice|charge|refund|price|discount|coupon|order|checkout|subscription|wallet|balance/i, 4, "money"],
+  [/upload|file|download|export|import|parse|serialize|deserialize|unzip|archive/i, 3, "data handling"],
+  [/sanitiz|escap|encod|decod|valid|filter|clean|purif|allowlist|whitelist|blocklist|blacklist/i, 4, "validation"],
+  [/crypt|hash|sign|verify|salt|cipher|random|nonce|secret|key/i, 4, "crypto"],
+  [/redirect|navigate|url|href|location|route/i, 2, "navigation"],
+  [/query|sql|exec|command|spawn|eval|render|template/i, 3, "execution"],
+  [/user|account|profile|email|phone|address|ssn|dob|pii/i, 2, "personal data"],
+  [/debug|test|mock|stub|fake|bypass|skip|internal|hidden|legacy|deprecated|temp/i, 3, "non-production"],
+];
+function nameScore(n){ let s = 0; for (const [re,w] of HOT_NAME) if (re.test(n)) s += w; return s; }
+function nameTags(n){ const t = []; for (const [re,,tag] of HOT_NAME) if (re.test(n)) t.push(tag); return t; }
+
+function runRules(src, starts){
+  const findings = [];
+  for (const rule of RULES){
+    if (rule.custom === "entropy"){
+      for (const e of entropyFindings(src, starts))
+        findings.push({rule, line:e.line, pos:e.pos, match:e.match, extra:"entropy "+e.entropy});
+      continue;
+    }
+    let m, guard = 0;
+    rule.re.lastIndex = 0;
+    while ((m = rule.re.exec(src)) && guard++ < 400){
+      if (m[0].length === 0){ rule.re.lastIndex++; continue; }
+      if (rule.id === "generic-assign"){
+        const val = m[2] || "";
+        if (PLACEHOLDER.test(val)) continue;
+        if (/^(?:process\.env|import\.meta|\$\{|window\.|config\.|https?:\/\/|\.{0,2}\/)/.test(val)) continue;
+        if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(val)) continue;          // hostname, not a secret
+        if (/^[a-z]+(?:[A-Z][a-z]+)*$/.test(val) && val.length < 16) continue;
+        if (shannon(val) < 2.4) continue;                              // "password" / repeated chars
+      }
+      findings.push({rule, line: lineOf(starts, m.index), pos:m.index, match: m[0].slice(0,220)});
+    }
+  }
+  return findings;
+}
+
+function findFlows(src, starts, findings){
+  const lines = src.split("\n");
+  const sinkHits = findings.filter(f => SINK_IDS.has(f.rule.id));
+  const srcLines = new Map();
+  let m; SOURCE_RE.lastIndex = 0;
+  while ((m = SOURCE_RE.exec(src))){
+    const ln = lineOf(starts, m.index);
+    if (!srcLines.has(ln)) srcLines.set(ln, new Set());
+    srcLines.get(ln).add(m[0].replace(/\s+/g,""));
+  }
+  const flows = [];
+  const minified = minifiedScore(src).minified;
+  const window = minified ? 0 : 14;
+  for (const s of sinkHits){
+    const near = [];
+    for (let ln = s.line - window; ln <= s.line + window; ln++){
+      if (srcLines.has(ln)) near.push({line:ln, what:[...srcLines.get(ln)].join(", ")});
+    }
+    if (minified){
+      // single-line bundle: look in a character radius instead
+      const from = Math.max(0, s.pos-500), to = Math.min(src.length, s.pos+500);
+      const slice = src.slice(from, to);
+      const found = slice.match(SOURCE_RE);
+      if (found) near.push({line:s.line, what:[...new Set(found)].slice(0,4).join(", ")+" (same region)"});
+    }
+    if (near.length) flows.push({sink:s, sources:near.slice(0,4), text:(lines[s.line-1]||"").trim().slice(0,200)});
+  }
+  return flows;
+}
+
+function analyze(name, src){
+  const starts = lineIndex(src);
+  const raw = runRules(src, starts);
+  // a named-provider rule beats the entropy heuristic on the same literal
+  const claimed = raw.filter(f => f.rule.cat === "secret" && f.rule.id !== "high-entropy")
+                     .map(f => [f.pos, f.pos + f.match.length]);
+  const findings = raw.filter(f => f.rule.id !== "high-entropy" ||
+      !claimed.some(([a,b]) => f.pos < b + 2 && f.pos + f.match.length > a - 2)).sort((a,b)=> SEV_ORDER[a.rule.sev]-SEV_ORDER[b.rule.sev] || a.line-b.line);
+  findings.forEach((f,i)=> f.key = name+"#"+f.rule.id+"#"+f.line+"#"+i);
+  const mini = minifiedScore(src);
+  return {
+    name, src, starts,
+    lines: starts.length,
+    bytes: src.length,
+    mini,
+    stack: detectStack(src, name),
+    findings,
+    endpoints: extractEndpoints(src, starts),
+    functions: extractFunctions(src, starts),
+    flows: findFlows(src, starts, findings),
+    comments: (src.match(/\/\*[\s\S]{0,400}?\*\/|\/\/[^\n]{0,200}/g)||[]).length,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * 3. REVIEW RUN-BOOK — the "activities" side
+ * ------------------------------------------------------------------ */
+
+const RUNBOOK = [
+  {id:"inventory", t:"Inventory before you read",
+   d:"Decide what this file is before judging any line of it. A vendor bundle, an app bundle, and a server-side module each deserve a different pass.",
+   q:["Is this first-party code or a third-party library? Library code is a dependency finding, not an app finding.",
+      "Is it minified? If so, pretty-print it and accept that you are reading structure, not style.",
+      "Is there a sourceMappingURL? Fetching the .map often hands you the original, commented source — do that first and re-run this bench on it.",
+      "Does it run in a browser or in Node? `process.env`, `require('fs')`, and `child_process` move you from XSS territory to command-injection territory."]},
+
+  {id:"secrets", t:"Sweep for credentials",
+   d:"Mechanical and fast, so do it first. The Credentials section already ran the patterns; your job is to separate live secrets from decoration.",
+   q:["For each hit: is it a real value, a placeholder, or a reference to an environment variable?",
+      "Does the same literal appear in more than one place? Reuse suggests it is real.",
+      "What would this key actually do? A finding without a named impact gets downgraded by the client.",
+      "Check the file's history if you have the repo: a secret removed in HEAD is still in the git objects."]},
+
+  {id:"surface", t:"Map the attack surface",
+   d:"Turn the file into a list of places where the application touches the outside world: routes, endpoints, storage, messaging, uploads.",
+   q:["Which endpoints appear here that the UI never calls? Those are your undocumented targets.",
+      "Which routes exist in the bundle but are hidden behind a role check?",
+      "Where does the app accept data it did not generate — query strings, hashes, postMessage, WebSocket frames, pasted content?",
+      "Which third-party origins does it talk to, and what does it send them?"]},
+
+  {id:"sources", t:"List the sources, then the sinks",
+   d:"DOM-XSS work is entirely a sources-and-sinks exercise. Enumerate both halves separately before trying to connect them.",
+   q:["Sources: location.hash, location.search, document.referrer, window.name, postMessage data, storage reads, API responses.",
+      "Sinks: eval, Function, innerHTML, insertAdjacentHTML, document.write, dangerouslySetInnerHTML, v-html, src/href assignment, setTimeout with a string.",
+      "For each sink, walk backwards: what is the right-hand side, and who last wrote to it?",
+      "Note every sanitizer in the path and what it actually strips — a function named `sanitize` may only trim whitespace."]},
+
+  {id:"flows", t:"Connect them",
+   d:"A source and a sink in the same function is a candidate. Proof comes from the running app, not from the file.",
+   q:["Can you reach the function from a URL you can hand to someone else? That is the difference between a bug and a reportable XSS.",
+      "Does anything encode or validate in between, and can you get past it (double encoding, case, nested tags, alternate protocols)?",
+      "If the flow passes through storage or an API, is it reflected or stored? Stored is the stronger finding.",
+      "Write the exact proof-of-concept URL or payload while you are still in the code."]},
+
+  {id:"authz", t:"Test every client-side decision",
+   d:"Treat each isAdmin/hasPermission/role check as a hypothesis: the server repeats this check. Disprove it.",
+   q:["Flip the flag in devtools to reveal the UI — then make the request directly and see whether the server cares.",
+      "Collect the endpoints that only privileged branches call; request them as a low-privileged user.",
+      "Look for IDs in request paths and bodies — object-level authorization is the most common real finding.",
+      "Check whether the privileged UI is even needed: often the API accepts the call with no UI at all."]},
+
+  {id:"logic", t:"Reconstruct the application's logic",
+   d:"Understanding beats pattern matching. Build a short written model of what the app does before you write the report.",
+   q:["What are the entities (user, order, document, tenant) and what operations exist on each?",
+      "What is the authentication model — cookie, bearer token, both? Where is it stored and attached?",
+      "Where are the trust boundaries: browser to API, API to third party, tenant to tenant?",
+      "Which state transitions matter (draft → published, pending → paid) and can any be skipped or replayed?",
+      "Write three sentences describing the app as if to a colleague. If you cannot, read more before testing."]},
+
+  {id:"lang", t:"Note the language-level hazards",
+   d:"Each stack has its own recurring failure modes. Knowing the stack tells you which ones to look for.",
+   q:["JavaScript: `==` coercion, prototype pollution, `parseInt` without a radix, NaN comparisons, `Array.sort` default string ordering.",
+      "React: dangerouslySetInnerHTML, props spread onto DOM elements, keys leaking data, secrets in NEXT_PUBLIC_/REACT_APP_ env vars.",
+      "Node: path traversal in `path.join`, `child_process` with a template string, unbounded `JSON.parse`, regex with catastrophic backtracking.",
+      "Any stack: client-side validation treated as enforcement; error messages that include stack traces or SQL."]},
+
+  {id:"deps", t:"Check what it depends on",
+   d:"Vendor code in the bundle is still your client's exposure, and version strings are usually right there.",
+   q:["Pull library names and versions from banners, package metadata, or the sourcemap's sources list.",
+      "Check known advisories for the versions you find — but confirm the vulnerable code path is actually reachable.",
+      "Note any library loaded from a third-party origin at runtime, and whether it has SRI."]},
+
+  {id:"report", t:"Write it up while the context is fresh",
+   d:"A finding is file + line + reachable path + demonstrated impact. Anything less is an observation.",
+   q:["For each finding: exact location, who can reach it, what they get, and what fixes it.",
+      "Separate confirmed findings from leads you could not prove, and say which is which.",
+      "Rank by business impact, not by scanner severity.",
+      "Keep the raw evidence — request, response, payload — attached to each item."]},
+];
+
+/* ------------------------------------------------------------------ *
+ * 4. STATE + STORAGE
+ * ------------------------------------------------------------------ */
+
+const store = {
+  get(k, dflt){ try { const v = localStorage.getItem("jsrb:"+k); return v == null ? dflt : JSON.parse(v); } catch { return dflt; } },
+  set(k, v){ try { localStorage.setItem("jsrb:"+k, JSON.stringify(v)); } catch {} }
+};
+
+const S = {
+  files: [],
+  active: 0,
+  view: "overview",
+  triage: store.get("triage", {}),
+  steps: store.get("steps", {}),
+  notes: store.get("notes", {}),
+  cats: new Set(["secret","sink","logic","surface"]),
+  sevs: new Set(["critical","high","medium","low","info"]),
+  jump: null,
+};
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const cur = () => S.files[S.active];
+
+const VIEWS = [
+  ["overview","Overview"], ["findings","Findings"], ["flows","Source → sink"],
+  ["endpoints","Endpoints"], ["logic","Logic map"], ["code","Code"], ["runbook","Run-book"],
+];
+
+/* ------------------------------------------------------------------ *
+ * 5. RENDER
+ * ------------------------------------------------------------------ */
+
+function render(){
+  renderRail();
+  const main = document.getElementById("main");
+  if (!S.files.length){ main.innerHTML = welcome(); return; }
+  main.innerHTML = ({
+    overview:viewOverview, findings:viewFindings, flows:viewFlows,
+    endpoints:viewEndpoints, logic:viewLogic, code:viewCode, runbook:viewRunbook
+  })[S.view](cur());
+  if (S.jump){ const el = document.getElementById("L"+S.jump); if (el){ el.scrollIntoView({block:"center"}); el.classList.add("flash"); } S.jump = null; }
+}
+
+function welcome(){
+  return `<div class="pagehead"><div>
+    <h2>Load a file to begin</h2>
+    <p>Everything is parsed in this page with no network calls. Drop a bundle, a single module, or paste a snippet. Large minified bundles are fine — the bench handles them by character offset rather than by line.</p>
+  </div></div>
+  <div class="tiles">
+    ${[["Credentials","Keyed patterns for the major providers plus entropy scoring, with placeholder filtering so the list stays short."],
+       ["Attack surface","Endpoints, routes, storage, uploads, messaging and third-party origins, pulled into tables you can work through."],
+       ["Source → sink","Pairs attacker-controllable values with execution sinks so you start from candidates instead of from grep."],
+       ["Logic map","Function inventory ranked by how security-relevant the name is, so you know what to read first."],
+       ["Run-book","Ten review activities with the questions to answer at each, tracked per file."],
+       ["Teaching notes","Every rule explains what an attacker gains and how to confirm it, rather than only flagging a pattern."]
+      ].map(([k,v])=>`<div class="tile"><div class="k">${k}</div><div class="s" style="margin-top:5px;font-size:12.5px;color:var(--ink-2)">${v}</div></div>`).join("")}
+  </div>
+  <p class="hint">Only review code you are authorized to test. Findings from a static pass are leads; confirm each one against the running application before reporting it.</p>`;
+}
+
+function renderRail(){
+  const fl = document.getElementById("files");
+  fl.innerHTML = S.files.length ? S.files.map((f,i)=>
+    `<li><button class="filebtn" data-file="${i}" aria-current="${i===S.active}">
+      <span class="nm">${esc(f.name)}</span><span class="ct">${f.findings.length}</span></button>
+      <button class="btn tiny" data-rm="${i}" title="Remove" aria-label="Remove ${esc(f.name)}">×</button></li>`).join("")
+    : `<li><span class="hint" style="padding:4px 8px">None loaded</span></li>`;
+
+  const f = cur();
+  const counts = f ? {
+    overview:"", findings:f.findings.length, flows:f.flows.length,
+    endpoints:f.endpoints.length, logic:f.functions.length, code:f.lines,
+    runbook:RUNBOOK.filter(s=>S.steps[(f.name)+"#"+s.id]).length+"/"+RUNBOOK.length
+  } : {};
+  document.getElementById("nav").innerHTML = VIEWS.map(([k,l])=>
+    `<li><button data-view="${k}" aria-current="${S.view===k}">${l}<span class="n">${counts[k] ?? ""}</span></button></li>`).join("");
+}
+
+function sevCounts(list){
+  const c = {critical:0,high:0,medium:0,low:0,info:0};
+  for (const f of list) if (!isDone(f)) c[f.rule.sev]++;
+  return c;
+}
+const isDone = f => S.triage[f.key] === "done" || S.triage[f.key] === "fp";
+
+function viewOverview(f){
+  const c = sevCounts(f.findings);
+  const total = Object.values(c).reduce((a,b)=>a+b,0) || 1;
+  const byCat = {};
+  for (const x of f.findings) byCat[x.rule.cat] = (byCat[x.rule.cat]||0)+1;
+  const top = f.functions.filter(x=>x.score>0).slice(0,8);
+  return `
+  <div class="pagehead">
+    <div><h2>${esc(f.name)}</h2>
+      <p>${f.lines.toLocaleString()} lines · ${(f.bytes/1024).toFixed(1)} KB · ${f.mini.minified ? "minified or bundled" : "readable formatting"} · average line ${f.mini.avg} chars</p></div>
+    <div class="toolbar">
+      ${f.mini.minified ? `<button class="btn" id="beautify">Pretty-print</button>` : ""}
+      <button class="btn" data-view="findings">Go to findings</button>
+    </div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile crit"><div class="k">Critical</div><div class="v">${c.critical}</div><div class="s">stop-and-report class</div></div>
+    <div class="tile high"><div class="k">High</div><div class="v">${c.high}</div><div class="s">confirm against the app</div></div>
+    <div class="tile med"><div class="k">Medium</div><div class="v">${c.medium}</div><div class="s">needs a reachable path</div></div>
+    <div class="tile"><div class="k">Low + info</div><div class="v">${c.low+c.info}</div><div class="s">context and leads</div></div>
+    <div class="tile"><div class="k">Candidate flows</div><div class="v">${f.flows.length}</div><div class="s">source near a sink</div></div>
+    <div class="tile"><div class="k">Endpoints</div><div class="v">${f.endpoints.length}</div><div class="s">${f.endpoints.filter(e=>e.interesting).length} notable</div></div>
+  </div>
+
+  <div class="panel"><header><h3>Severity mix</h3><span class="sub">open items only</span></header>
+    <div class="body">
+      <div class="bar">${["critical","high","medium","low","info"].map(s=>c[s]?`<i style="width:${c[s]/total*100}%;background:var(--sev-${s==="critical"?"crit":s==="high"?"high":s==="medium"?"med":s==="low"?"low":"info"})"></i>`:"").join("")}</div>
+      <div class="legend">${["critical","high","medium","low","info"].map(s=>`<span><i style="background:var(--sev-${s==="critical"?"crit":s==="high"?"high":s==="medium"?"med":s==="low"?"low":"info"})"></i>${s} ${c[s]}</span>`).join("")}</div>
+      <div class="chips" style="margin-top:14px">${Object.entries(byCat).map(([k,v])=>`<span class="chip">${CAT_LABEL[k]}<span class="n">${v}</span></span>`).join("")}</div>
+    </div>
+  </div>
+
+  <div class="panel"><header><h3>What this file is built with</h3><span class="sub">inferred from the source itself</span></header>
+    <div class="body">
+      <div class="chips">${f.stack.length ? f.stack.map(t=>`<span class="chip">${esc(t)}</span>`).join("") : `<span class="hint">No framework signatures matched — likely plain JavaScript.</span>`}</div>
+      <p class="hint" style="margin-top:12px">${stackAdvice(f.stack)}</p>
+    </div>
+  </div>
+
+  <div class="panel"><header><h3>Read these functions first</h3><span class="sub">ranked by how security-relevant the name is</span></header>
+    <div class="body flush"><div class="tbl-wrap"><table>
+      <thead><tr><th>Function</th><th>Kind</th><th>Why it matters</th><th class="num">Line</th></tr></thead>
+      <tbody>${top.length ? top.map(x=>`<tr>
+        <td class="mono">${esc(x.name)}<span style="color:var(--ink-3)">(${esc(x.args)})</span></td>
+        <td style="color:var(--ink-3)">${x.kind}</td>
+        <td>${nameTags(x.name).join(", ")||"—"}</td>
+        <td class="num"><button class="ln" data-goto="${x.line}">${x.line}</button></td></tr>`).join("")
+        : `<tr><td colspan="4" class="empty">No named functions matched the security vocabulary. In a minified bundle this is expected — work from the Findings and Endpoints sections instead.</td></tr>`}</tbody>
+    </table></div></div>
+  </div>
+
+  <div class="panel"><header><h3>Notes for this file</h3><span class="sub">saved in this browser</span></header>
+    <div class="body"><textarea id="note" placeholder="What does this file do? What are you going to test first?">${esc(S.notes[f.name]||"")}</textarea></div>
+  </div>`;
+}
+
+function stackAdvice(stack){
+  const a = [];
+  if (stack.includes("React")) a.push("React escapes by default, so focus on dangerouslySetInnerHTML, href/src props, and any NEXT_PUBLIC_/REACT_APP_ value baked into the bundle.");
+  if (stack.includes("Vue")) a.push("For Vue, v-html and dynamic component names are the escapes from the default protection.");
+  if (stack.includes("Angular")) a.push("For Angular, the bypassSecurityTrust* family and direct [innerHTML] bindings are the sanitizer opt-outs.");
+  if (stack.includes("jQuery")) a.push("jQuery's .html(), .append() and even $(input) execute HTML; versions before 3.5 have known selector-injection issues.");
+  if (stack.includes("Node / server-side")) a.push("This looks like server code: path traversal, child_process, and unvalidated deserialization matter more here than DOM XSS.");
+  if (stack.includes("Webpack bundle") || stack.includes("Vite build")) a.push("This is a build output, so names are mangled — fetch the sourcemap if one is referenced; it usually restores the original filenames and comments.");
+  if (stack.includes("Source map reference")) a.push("A sourceMappingURL is present: request that .map file first, then review the original sources it contains.");
+  if (stack.includes("GraphQL")) a.push("The bundle likely contains the full operation set — extract every query and mutation before testing field-level authorization.");
+  if (stack.includes("Firebase")) a.push("Firebase config in the client is normal; the real question is whether the security rules enforce anything. Test direct Firestore/RTDB reads.");
+  return a.length ? a.join(" ") : "Identify the runtime before you judge the risk: the same pattern means different things in a browser bundle and in a Node module.";
+}
+
+function viewFindings(f){
+  const list = f.findings.filter(x => S.cats.has(x.rule.cat) && S.sevs.has(x.rule.sev));
+  const open = list.filter(x=>!isDone(x)), closed = list.filter(isDone);
+  const row = x => {
+    const st = S.triage[x.key] || "";
+    const snippet = highlight(x);
+    return `<div class="find ${st?"done":""}">
+      <button class="row" data-find="${esc(x.key)}">
+        <span><span class="sev ${x.rule.sev}">${x.rule.sev}</span></span>
+        <span>
+          <span class="ttl">${esc(x.rule.title)}</span>
+          <span class="meta"><span>line ${x.line}</span><span>${CAT_LABEL[x.rule.cat]}</span><span>${x.rule.id}</span>${x.extra?`<span>${esc(x.extra)}</span>`:""}</span>
+          <span class="snip">${snippet}</span>
+        </span>
+        <span class="state">
+          <span class="btn tiny" data-tri="${esc(x.key)}|done" role="button">${st==="done"?"✓ done":"Done"}</span>
+          <span class="btn tiny" data-tri="${esc(x.key)}|fp" role="button">${st==="fp"?"✓ FP":"False pos."}</span>
+        </span>
+      </button>
+      <div class="detail" id="d-${cssid(x.key)}" hidden>
+        <div><h4>Why it matters</h4><p>${esc(x.rule.why)}</p></div>
+        <div><h4>How to confirm</h4><ol>${x.rule.verify.map(v=>`<li>${esc(v)}</li>`).join("")}</ol></div>
+        <div class="lnk"><button class="ln" data-goto="${x.line}">Open line ${x.line} in the code view</button></div>
+      </div>
+    </div>`;
+  };
+  return `
+  <div class="pagehead">
+    <div><h2>Findings</h2><p>${open.length} open, ${closed.length} triaged. Each entry explains the attacker's gain and the step that turns it from a pattern match into a confirmed issue.</p></div>
+    <div class="toolbar"><button class="btn" id="copyfind">Copy as Markdown</button></div>
+  </div>
+  <div class="panel"><div class="body">
+    <div class="chips">
+      ${Object.keys(CAT_LABEL).map(c=>`<button class="chip ${S.cats.has(c)?"on":""}" data-cat="${c}">${CAT_LABEL[c]}<span class="n">${f.findings.filter(x=>x.rule.cat===c).length}</span></button>`).join("")}
+    </div>
+    <div class="chips" style="margin-top:7px">
+      ${["critical","high","medium","low","info"].map(s=>`<button class="chip ${S.sevs.has(s)?"on":""}" data-sev="${s}">${s}<span class="n">${f.findings.filter(x=>x.rule.sev===s).length}</span></button>`).join("")}
+    </div>
+  </div></div>
+  <div class="panel"><div class="body flush">
+    ${list.length ? open.map(row).join("")+closed.map(row).join("") : `<div class="empty">Nothing matched the current filters.</div>`}
+  </div></div>`;
+}
+const cssid = k => k.replace(/[^a-zA-Z0-9]/g,"_");
+
+function highlight(x){
+  const f = cur();
+  const lineStart = f.starts[x.line-1] ?? 0;
+  const lineEnd = f.starts[x.line] ?? f.src.length;
+  let s = Math.max(lineStart, x.pos - 60), e = Math.min(lineEnd, x.pos + x.match.length + 60);
+  const before = f.src.slice(s, x.pos), hit = f.src.slice(x.pos, x.pos+x.match.length), after = f.src.slice(x.pos+x.match.length, e);
+  return (s>lineStart?"…":"") + esc(before) + "<mark>" + esc(hit) + "</mark>" + esc(after) + (e<lineEnd?"…":"");
+}
+
+function viewFlows(f){
+  return `
+  <div class="pagehead"><div><h2>Source → sink candidates</h2>
+    <p>An attacker-controllable value appearing near an execution sink. These are leads to walk backwards through, not confirmed vulnerabilities — proximity is not data flow.</p></div></div>
+  ${f.flows.length ? `<div class="panel"><div class="body flush"><div class="tbl-wrap"><table>
+    <thead><tr><th class="num">Line</th><th>Sink</th><th>Nearby source</th><th>Code</th></tr></thead>
+    <tbody>${f.flows.map(fl=>`<tr>
+      <td class="num"><button class="ln" data-goto="${fl.sink.line}">${fl.sink.line}</button></td>
+      <td><span class="sev ${fl.sink.rule.sev}">${fl.sink.rule.sev}</span><div style="margin-top:4px">${esc(fl.sink.rule.title)}</div></td>
+      <td class="mono">${fl.sources.map(s=>`<div>${esc(s.what)} <span style="color:var(--ink-3)">· L${s.line}</span></div>`).join("")}</td>
+      <td class="mono" style="max-width:420px"><div style="overflow-x:auto">${esc(fl.text || f.src.slice(fl.sink.pos-40, fl.sink.pos+120).trim())}</div></td>
+    </tr>`).join("")}</tbody></table></div></div></div>`
+  : `<div class="panel"><div class="empty">No sink had a source nearby. Check the Findings list for sinks whose input arrives from an API response or a framework prop instead — those do not look like a classic source but are still attacker-influenced in a stored-XSS scenario.</div></div>`}
+  <div class="panel"><header><h3>How to walk one of these</h3></header><div class="body">
+    <ol style="margin:0;padding-left:18px;color:var(--ink-2)">
+      <li>Open the sink line and identify the exact expression being assigned or executed.</li>
+      <li>Name the variable, then search the file for every write to it.</li>
+      <li>Follow each write back until you reach a literal (dead end) or an input (live lead).</li>
+      <li>List every function the value passes through and read what each one does to it. A sanitizer that only strips <code>&lt;script&gt;</code> is not a sanitizer.</li>
+      <li>Construct the URL or message that puts your payload at the source, then test it in the running app.</li>
+    </ol>
+  </div></div>`;
+}
+
+function viewEndpoints(f){
+  const g = {interesting:[], api:[], other:[]};
+  for (const e of f.endpoints) (e.interesting ? g.interesting : e.api ? g.api : g.other).push(e);
+  const tbl = (rows, title, note) => rows.length ? `
+    <div class="panel"><header><h3>${title}</h3><span class="sub">${note}</span></header>
+    <div class="body flush"><div class="tbl-wrap"><table>
+      <thead><tr><th>URL or path</th><th>Found as</th><th class="num">Lines</th></tr></thead>
+      <tbody>${rows.map(e=>`<tr>
+        <td class="mono" style="word-break:break-all">${esc(e.url)}</td>
+        <td style="color:var(--ink-3);font-size:12px">${esc(e.how)}</td>
+        <td class="num">${e.lines.slice(0,4).map(l=>`<button class="ln" data-goto="${l}">${l}</button>`).join(" ")}${e.lines.length>4?" +"+(e.lines.length-4):""}</td>
+      </tr>`).join("")}</tbody></table></div></div></div>` : "";
+  return `
+  <div class="pagehead"><div><h2>Endpoints and paths</h2>
+    <p>Every URL and path literal the file contains. Compare this list against what the application actually calls while you use it — the difference is the undocumented surface.</p></div>
+    <div class="toolbar"><button class="btn" id="copyendp">Copy list</button></div></div>
+  ${tbl(g.interesting,"Notable","names suggesting auth, admin, data export, payment, or configuration")}
+  ${tbl(g.api,"API paths","matched an api/v1/graphql-style path")}
+  ${tbl(g.other,"Everything else","assets, third-party origins, and fragments")}
+  ${f.endpoints.length ? "" : `<div class="panel"><div class="empty">No URL literals found.</div></div>`}`;
+}
+
+function viewLogic(f){
+  const tagged = f.functions.filter(x=>x.score>0);
+  const plain = f.functions.filter(x=>!x.score);
+  const groups = {};
+  for (const x of tagged) for (const t of nameTags(x.name)) (groups[t] ||= []).push(x);
+  return `
+  <div class="pagehead"><div><h2>Logic map</h2>
+    <p>${f.functions.length} named functions, ${tagged.length} of them matching security-relevant vocabulary. Read the grouped ones first: they tell you what the application believes it is protecting.</p></div></div>
+
+  <div class="panel"><header><h3>Grouped by concern</h3><span class="sub">a function can appear in more than one group</span></header>
+    <div class="body">${Object.keys(groups).length ? Object.entries(groups).sort((a,b)=>b[1].length-a[1].length).map(([t,xs])=>`
+      <div style="margin-bottom:13px">
+        <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:5px">${t} · ${xs.length}</div>
+        <div class="chips">${xs.slice(0,40).map(x=>`<button class="chip" data-goto="${x.line}"><b>${esc(x.name)}</b><span class="n">L${x.line}</span></button>`).join("")}</div>
+      </div>`).join("") : `<p class="hint">Nothing matched. Minified code renames functions, so use the Endpoints and Findings sections as your map instead, or recover names from a sourcemap.</p>`}
+    </div>
+  </div>
+
+  <div class="panel"><header><h3>Full inventory</h3><span class="sub">${plain.length} further declarations</span></header>
+    <div class="body flush"><div class="tbl-wrap" style="max-height:52vh"><table>
+      <thead><tr><th>Name</th><th>Kind</th><th>Parameters</th><th class="num">Line</th></tr></thead>
+      <tbody>${f.functions.slice(0,400).map(x=>`<tr>
+        <td class="mono">${esc(x.name)}</td><td style="color:var(--ink-3)">${x.kind}</td>
+        <td class="mono" style="color:var(--ink-3);max-width:320px;word-break:break-all">${esc(x.args)||"—"}</td>
+        <td class="num"><button class="ln" data-goto="${x.line}">${x.line}</button></td></tr>`).join("")}</tbody>
+    </table></div></div>
+  </div>`;
+}
+
+function viewCode(f){
+  const hits = new Map();
+  for (const x of f.findings) hits.set(x.line, (hits.get(x.line)||0)+1);
+  const lines = f.src.split("\n");
+  const cap = 6000;
+  const shown = lines.slice(0, cap);
+  return `
+  <div class="pagehead"><div><h2>Source</h2>
+    <p>${lines.length.toLocaleString()} lines${lines.length>cap?`, showing the first ${cap.toLocaleString()}`:""}. Lines carrying a finding are tinted.</p></div>
+    <div class="toolbar">
+      <input type="search" id="csearch" placeholder="Search this file" style="width:220px">
+      ${f.mini.minified ? `<button class="btn" id="beautify2">Pretty-print</button>`:""}
+    </div></div>
+  <div class="panel"><div class="body flush"><div class="codewrap"><pre class="code">${
+    shown.map((l,i)=>`<div class="l ${hits.has(i+1)?"hit":""}" id="L${i+1}"><span class="g">${i+1}</span><span class="t">${esc(l) || " "}</span></div>`).join("")
+  }</pre></div></div></div>`;
+}
+
+function viewRunbook(f){
+  const done = RUNBOOK.filter(s=>S.steps[f.name+"#"+s.id]).length;
+  return `
+  <div class="pagehead"><div><h2>Review run-book</h2>
+    <p>${done} of ${RUNBOOK.length} activities marked complete for ${esc(f.name)}. Work top to bottom: each step narrows what the next one has to read.</p></div>
+    <div class="toolbar"><button class="btn" id="resetsteps">Reset for this file</button></div></div>
+  <div class="panel"><div class="body flush"><ol class="steps">
+    ${RUNBOOK.map(s=>{
+      const k = f.name+"#"+s.id, on = !!S.steps[k];
+      return `<li class="${on?"done":""}">
+        <div class="hd"><div><h4>${esc(s.t)}</h4><p>${esc(s.d)}</p></div>
+          <label><input type="checkbox" data-step="${esc(k)}" ${on?"checked":""}> done</label></div>
+        <ul class="ask">${s.q.map(q=>`<li>${q}</li>`).join("")}</ul>
+      </li>`;
+    }).join("")}
+  </ol></div></div>
+  <p class="hint">Scope discipline: static findings are leads until confirmed on a system you are authorized to test, and credentials are reported rather than exercised beyond the minimum needed to prove they are live.</p>`;
+}
+
+/* ------------------------------------------------------------------ *
+ * 6. EVENTS
+ * ------------------------------------------------------------------ */
+
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-view],[data-file],[data-rm],[data-find],[data-tri],[data-goto],[data-cat],[data-sev],button");
+  if (!t) return;
+
+  if (t.dataset.tri){ e.stopPropagation(); const [k,v] = t.dataset.tri.split("|");
+    S.triage[k] = S.triage[k]===v ? "" : v; store.set("triage", S.triage); render(); return; }
+  if (t.dataset.find){ const d = document.getElementById("d-"+cssid(t.dataset.find)); if (d) d.hidden = !d.hidden; return; }
+  if (t.dataset.goto){ S.view = "code"; S.jump = +t.dataset.goto; render(); return; }
+  if (t.dataset.view){ S.view = t.dataset.view; render(); return; }
+  if (t.dataset.file){ S.active = +t.dataset.file; S.view = "overview"; render(); return; }
+  if (t.dataset.rm){ S.files.splice(+t.dataset.rm,1); S.active = 0; render(); return; }
+  if (t.dataset.cat){ S.cats.has(t.dataset.cat) ? S.cats.delete(t.dataset.cat) : S.cats.add(t.dataset.cat); render(); return; }
+  if (t.dataset.sev){ S.sevs.has(t.dataset.sev) ? S.sevs.delete(t.dataset.sev) : S.sevs.add(t.dataset.sev); render(); return; }
+  if (t.dataset.step !== undefined && t.tagName !== "INPUT"){ return; }
+
+  switch (t.id){
+    case "pick": document.getElementById("file").click(); break;
+    case "theme": {
+      const root = document.documentElement;
+      const now = root.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark":"light");
+      root.setAttribute("data-theme", now === "dark" ? "light" : "dark"); break;
+    }
+    case "demo": loadFile("sample-app.js", SAMPLE); break;
+    case "paste": openPaste(); break;
+    case "beautify": case "beautify2": { const f = cur(); addFile(f.name.replace(/\.js$/,"")+".pretty.js", beautify(f.src)); break; }
+    case "resetsteps": { const f = cur(); RUNBOOK.forEach(s=>delete S.steps[f.name+"#"+s.id]); store.set("steps",S.steps); render(); break; }
+    case "copyfind": copy(markdownReport(cur())); t.textContent = "Copied"; setTimeout(()=>t.textContent="Copy as Markdown",1400); break;
+    case "copyendp": copy(cur().endpoints.map(e=>e.url).join("\n")); t.textContent = "Copied"; setTimeout(()=>t.textContent="Copy list",1400); break;
+    case "export": copy(S.files.map(markdownReport).join("\n\n---\n\n")); t.textContent = "Copied"; setTimeout(()=>t.textContent="Export notes",1400); break;
+  }
+});
+
+document.addEventListener("change", e => {
+  if (e.target.dataset.step){ S.steps[e.target.dataset.step] = e.target.checked; store.set("steps", S.steps); render(); }
+});
+document.addEventListener("input", e => {
+  if (e.target.id === "note"){ S.notes[cur().name] = e.target.value; store.set("notes", S.notes); }
+  if (e.target.id === "csearch"){
+    const q = e.target.value.toLowerCase();
+    document.querySelectorAll("pre.code .l").forEach(l=>{
+      l.hidden = q.length > 1 && !l.textContent.toLowerCase().includes(q);
+    });
+  }
+});
+
+function openPaste(){
+  const main = document.getElementById("main");
+  main.innerHTML = `<div class="pagehead"><div><h2>Paste code</h2><p>Paste a snippet or a whole bundle, then analyze.</p></div></div>
+  <div class="panel"><div class="body">
+    <input type="text" id="pname" placeholder="File name (e.g. app.bundle.js)" value="pasted.js" style="margin-bottom:9px">
+    <textarea id="pcode" style="min-height:280px" placeholder="// paste here"></textarea>
+    <div class="toolbar" style="margin-top:10px"><button class="btn primary" id="pgo">Analyze</button></div>
+  </div></div>`;
+  document.getElementById("pgo").onclick = () => {
+    const code = document.getElementById("pcode").value;
+    if (code.trim()) loadFile(document.getElementById("pname").value || "pasted.js", code);
+  };
+}
+
+/* file intake */
+const drop = document.getElementById("drop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("hot")}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("hot")}));
+document.addEventListener("dragover", e=>e.preventDefault());
+document.addEventListener("drop", e=>{ e.preventDefault(); intake(e.dataTransfer.files); });
+drop.addEventListener("drop", e=>intake(e.dataTransfer.files));
+document.getElementById("file").addEventListener("change", e=>intake(e.target.files));
+
+function intake(fileList){
+  [...fileList].slice(0,25).forEach(file=>{
+    const r = new FileReader();
+    r.onload = () => loadFile(file.name, String(r.result));
+    r.readAsText(file);
+  });
+}
+function loadFile(name, src){ addFile(name, src); }
+function addFile(name, src){
+  const a = analyze(name, src);
+  S.files.push(a); S.active = S.files.length-1; S.view = "overview"; render();
+}
+
+function beautify(src){
+  let out = "", depth = 0, inStr = null, prev = "";
+  for (let i=0;i<src.length;i++){
+    const c = src[i];
+    if (inStr){ out += c; if (c === inStr && prev !== "\\") inStr = null; prev = c; continue; }
+    if (c === '"' || c === "'" || c === "`"){ inStr = c; out += c; prev = c; continue; }
+    if (c === "{"){ depth++; out += "{\n" + "  ".repeat(depth); }
+    else if (c === "}"){ depth = Math.max(0,depth-1); out = out.replace(/\s+$/,"") + "\n" + "  ".repeat(depth) + "}"; }
+    else if (c === ";"){ out += ";\n" + "  ".repeat(depth); }
+    else if (c === "\n"){ if (!/\n\s*$/.test(out)) out += "\n" + "  ".repeat(depth); }
+    else out += c;
+    prev = c;
+  }
+  return out;
+}
+
+function markdownReport(f){
+  const open = f.findings.filter(x=>S.triage[x.key] !== "fp");
+  const bySev = {};
+  for (const x of open) (bySev[x.rule.sev] ||= []).push(x);
+  let md = `# Review notes — ${f.name}\n\n`;
+  md += `- ${f.lines} lines, ${(f.bytes/1024).toFixed(1)} KB${f.mini.minified?", minified":""}\n`;
+  md += `- Stack signatures: ${f.stack.join(", ")||"none detected"}\n`;
+  md += `- ${f.endpoints.length} URL/path literals, ${f.flows.length} source→sink candidates\n\n`;
+  if (S.notes[f.name]) md += `## Notes\n\n${S.notes[f.name]}\n\n`;
+  md += `## Findings\n\n`;
+  for (const sev of ["critical","high","medium","low","info"]){
+    if (!bySev[sev]) continue;
+    md += `### ${sev}\n\n`;
+    for (const x of bySev[sev]){
+      md += `- **${x.rule.title}** — \`${f.name}:${x.line}\`${S.triage[x.key]==="done"?" _(triaged)_":""}\n`;
+      md += `  - \`${x.match.replace(/`/g,"'").slice(0,160)}\`\n`;
+      md += `  - Impact: ${x.rule.why}\n`;
+      md += `  - Next: ${x.rule.verify[0]}\n`;
+    }
+    md += "\n";
+  }
+  md += `## Run-book progress\n\n`;
+  for (const s of RUNBOOK) md += `- [${S.steps[f.name+"#"+s.id]?"x":" "}] ${s.t}\n`;
+  return md;
+}
+
+function copy(text){
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.style.position="fixed"; ta.style.opacity="0";
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); } catch {}
+  ta.remove();
+}
+
+/* ------------------------------------------------------------------ *
+ * 7. SAMPLE — a deliberately flawed file so the bench opens populated
+ * ------------------------------------------------------------------ */
+const SAMPLE = `// sample-app.js — intentionally vulnerable teaching file. Do not deploy.
+const CONFIG = {
+  apiBase: "https://api.acme-demo.internal/v2",
+  legacyApi: "http://legacy.acme-demo.test/v1/users",
+  analyticsKey: "${"AIza"+"SyD3m0K3yN0tR34lPl4c3h0ld3rV4lu31xx"}",
+  uploadBucket: "acme-demo-uploads.s3.us-east-1.amazonaws.com",
+  debug: true
+};
+
+// TODO: move this to the backend before launch
+const ADMIN_API_TOKEN = "${"s3rv1c3_t0k3n_"+"9Hq2LmXr7Tzy4Vb8NwPk"}";
+
+function getSessionRole() {
+  return JSON.parse(localStorage.getItem("session") || "{}").role;
+}
+
+function isAdmin() {
+  return getSessionRole() === "admin" || CONFIG.debug === true;
+}
+
+function renderWelcome() {
+  const name = new URLSearchParams(location.search).get("name") || "guest";
+  document.getElementById("banner").innerHTML = "<h2>Welcome back, " + name + "</h2>";
+}
+
+function openReport(id) {
+  const target = location.hash.slice(1);
+  if (target) {
+    window.location.href = target;
+  }
+  fetch(CONFIG.apiBase + "/reports/" + id, { credentials: "include" })
+    .then(r => r.json())
+    .then(data => {
+      document.querySelector("#report").innerHTML = data.htmlBody;
+    });
+}
+
+window.addEventListener("message", function (event) {
+  const payload = event.data;
+  if (payload && payload.cmd) {
+    eval(payload.cmd);
+  }
+});
+
+function deepMerge(target, source) {
+  for (const key in source) {
+    if (typeof source[key] === "object") {
+      target[key] = deepMerge(target[key] || {}, source[key]);
+    } else {
+      target[key] = source[key];
+    }
+  }
+  return target;
+}
+
+function makeResetToken(userId) {
+  return btoa(userId + ":" + Math.random().toString(36).slice(2));
+}
+
+async function adminDeleteUser(userId) {
+  if (!isAdmin()) return;
+  return fetch(CONFIG.apiBase + "/admin/users/" + userId, {
+    method: "DELETE",
+    headers: { Authorization: "Bearer " + ADMIN_API_TOKEN }
+  });
+}
+
+function uploadAvatar(file) {
+  if (!/\\.(png|jpg)$/i.test(file.name)) return alert("Images only");
+  const fd = new FormData();
+  fd.append("avatar", file);
+  return fetch("/api/v2/profile/avatar", { method: "POST", body: fd, credentials: "include" });
+}
+
+const ROUTES = [
+  { path: "/dashboard", view: "Dashboard" },
+  { path: "/admin/audit-log", view: "AuditLog", requiresRole: "admin" },
+  { path: "/internal/debug-console", view: "DebugConsole" }
+];
+`;
+
+/* boot */
+render();
+</script>
+
+</body>
+</html>
